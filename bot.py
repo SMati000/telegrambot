@@ -1,11 +1,9 @@
-"""
-Simple Bot to reply to Telegram messages taken from the python-telegram-bot examples.
-"""
-
+import functools
 import logging
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
-from dotenv import load_dotenv
 import os
+from dotenv import load_dotenv
+from telegram import ForceReply
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 load_dotenv()
 PORT = int(os.environ.get('PORT', 5000))
@@ -13,20 +11,56 @@ PORT = int(os.environ.get('PORT', 5000))
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
-
 logger = logging.getLogger(__name__)
+
 TOKEN = os.environ.get("TOKEN")
 
-# Define a few command handlers. These usually take the two arguments update and
-# context. Error handlers also receive the raised TelegramError object in error.
-def start(update, context):
+
+async def start(update, context):
     """Send a message when the command /start is issued."""
-    update.message.reply_text('Hi!')
+    user = update.effective_user
+    await update.message.reply_html(  # replies in html format
+        rf"Hi {user.mention_html()}!",
+        reply_markup=ForceReply(selective=True)  # display a reply interface to the user as if the user
+                                                 # has selected the bot’s message and tapped ‘Reply’
+    )
 
 
 def help(update, context):
     """Send a message when the command /help is issued."""
     update.message.reply_text('Help!')
+
+
+async def set_timer(update, context) -> None:
+    """Let the user specify a message to be sent back to him/her after the specified time."""
+    chat_id = update.effective_message.chat_id
+    try:
+        # args[0] should contain the time for the timer in seconds
+        # Then, should be the text message to be sent after time's over
+        due = float(context.args[0])
+
+        if due < 0:
+            await update.effective_message.reply_text("Sorry we can not go back to future!")
+            return
+
+        temp = ""
+        for i in range(1, len(context.args)):
+            temp += context.args[i] + " "
+
+        temp = temp if temp else "Hey! your time's over!!"
+
+        context.job_queue.run_once(functools.partial(alarm, message=temp), due, chat_id=chat_id, name=str(chat_id), data=due)
+
+        await update.effective_message.reply_text("Timer successfully set!")
+
+    except (IndexError, ValueError):
+        await update.effective_message.reply_text("Usage: /set <seconds>")
+
+
+async def alarm(context, message) -> None:
+    """Send the alarm message."""
+    job = context.job
+    await context.bot.send_message(job.chat_id, text=message)
 
 
 def echo(update, context):
@@ -41,35 +75,19 @@ def error(update, context):
 
 def main():
     """Start the bot."""
-    # Create the Updater and pass it your bot's token.
-    # Make sure to set use_context=True to use the new context based callbacks
-    # Post version 12 this will no longer be necessary
-    updater = Updater(TOKEN, use_context=True)
-
-    # Get the dispatcher to register handlers
-    dp = updater.dispatcher
+    # Create the Application and pass it your bot's token.
+    application = Application.builder().token(TOKEN).build()
 
     # on different commands - answer in Telegram
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("help", help))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help))
+    application.add_handler(CommandHandler("set", set_timer))
 
-    # on noncommand i.e message - echo the message on Telegram
-    dp.add_handler(MessageHandler(Filters.text, echo))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
-    # log all errors
-    dp.add_error_handler(error)
-
-    # Start the Bot
-    updater.start_webhook(listen="0.0.0.0",
-                          port=int(PORT),
-                          url_path=TOKEN,
-                          webhook_url='https://fathomless-cliffs-05329.herokuapp.com/' + TOKEN)
-
-    # Run the bot until you press Ctrl-C or the process receives SIGINT,
-    # SIGTERM or SIGABRT. This should be used most of the time, since
-    # start_polling() is non-blocking and will stop the bot gracefully.
-    updater.idle()
+    # Run the bot until the user presses Ctrl-C
+    application.run_polling()
 
 
-# if __name__ == '__main__':
-#     main()
+if __name__ == '__main__':
+    main()
