@@ -2,8 +2,8 @@ import functools
 import logging
 import os
 from dotenv import load_dotenv
-from telegram import ForceReply
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram.ext import Application, CommandHandler, MessageHandler, ConversationHandler, filters
 
 load_dotenv()
 PORT = int(os.environ.get('PORT', 5000))
@@ -15,15 +15,45 @@ logger = logging.getLogger(__name__)
 
 TOKEN = os.environ.get("TOKEN")
 
+GENDER = range(3)
 
-async def start(update, context):
-    """Send a message when the command /start is issued."""
-    user = update.effective_user
-    await update.message.reply_html(  # replies in html format
-        rf"Hi {user.mention_html()}!",
-        reply_markup=ForceReply(selective=True)  # display a reply interface to the user as if the user
-                                                 # has selected the bot’s message and tapped ‘Reply’
+
+# Define a few command handlers. These usually take the two arguments update and
+# context. Error handlers also receive the raised TelegramError object in error.
+async def start(update, context) -> int:
+    """Starts the conversation and asks the user about their gender."""
+    reply_keyboard = [["Boy"], ["Girl"], ["Other"]]
+
+    await update.message.reply_text(
+        "Hi! My name is Professor Bot. I will hold a conversation with you. "
+        "Send /cancel to stop talking to me.\n\n"
+        "Are you a boy or a girl?",
+        reply_markup=ReplyKeyboardMarkup(
+            reply_keyboard, one_time_keyboard=True, input_field_placeholder="Boy or Girl?"
+        ),
     )
+
+    return GENDER
+
+
+async def gender(update, context) -> int:
+    """Stores the selected gender and answers the user."""
+    user = update.message.from_user
+    logger.info("Gender of %s: %s", user.first_name, update.message.text)
+    await update.message.reply_text(
+        "I see!", reply_markup=ReplyKeyboardRemove(),
+    )
+
+
+async def cancel(update, context) -> int:
+    """Cancels and ends the conversation."""
+    user = update.message.from_user
+    logger.info("User %s canceled the conversation.", user.first_name)
+    await update.message.reply_text(
+        "Bye! I hope we can talk again some day.", reply_markup=ReplyKeyboardRemove()
+    )
+
+    return ConversationHandler.END
 
 
 def help(update, context):
@@ -49,7 +79,10 @@ async def set_timer(update, context) -> None:
 
         temp = temp if temp else "Hey! your time's over!!"
 
-        context.job_queue.run_once(functools.partial(alarm, message=temp), due, chat_id=chat_id, name=str(chat_id), data=due)
+        context.job_queue.run_once(
+            functools.partial(alarm, message=temp), due, chat_id=chat_id,
+            name=str(chat_id), data=due
+        )
 
         await update.effective_message.reply_text("Timer successfully set!")
 
@@ -79,9 +112,18 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     # on different commands - answer in Telegram
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help))
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            GENDER: [MessageHandler(filters.Regex("^(Boy|Girl|Other)$"), gender)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    # application.add_handler(CommandHandler("start", start))
+    application.add_handler(conv_handler)
     application.add_handler(CommandHandler("set", set_timer))
+    application.add_handler(CommandHandler("help", help))
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
