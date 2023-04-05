@@ -3,9 +3,9 @@ import logging
 import os
 from typing import Dict
 from dotenv import load_dotenv
-from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ConversationHandler, \
-    filters, PicklePersistence
+    filters, PicklePersistence, CallbackQueryHandler
 
 load_dotenv()
 PORT = int(os.environ.get('PORT', 5000))
@@ -73,9 +73,27 @@ def facts_to_str(user_data: Dict[str, str]) -> str:
     return "\n".join(facts).join(["\n", "\n"])
 
 
-def help(update, context):
-    """Send a message when the command /help is issued."""
-    update.message.reply_text('Help!')
+async def inline(update, context) -> None:
+    """Sends a message with three inline buttons attached."""
+    keyboard = [
+        [InlineKeyboardButton("Option 1", callback_data="1")],
+        [InlineKeyboardButton("Option 2", callback_data="2")],
+        [InlineKeyboardButton("Option 3", callback_data="3")]
+    ]
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text("Please choose:", reply_markup=reply_markup)
+
+
+async def button(update, context) -> None:
+    """Parses the CallbackQuery and updates the message text."""
+    query = update.callback_query
+
+    # CallbackQueries need to be answered, even if no notification to the user is needed
+    await query.answer()
+
+    await query.edit_message_text(text=f"Selected option: {query.data}. Thank you")
 
 
 async def set_timer(update, context) -> None:
@@ -118,6 +136,11 @@ def echo(update, context):
     update.message.reply_text(update.message.text)
 
 
+def help(update, context):
+    """Send a message when the command /help is issued."""
+    update.message.reply_text('Help!')
+
+
 def error(update, context):
     """Log Errors caused by Updates."""
     logger.warning('Update "%s" caused error "%s"', update, context.error)
@@ -146,8 +169,13 @@ def main():
     # application.add_handler(CommandHandler("start", start))
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("show_data", show_data))
-    application.add_handler(CommandHandler("help", help))
+
+    application.add_handler(CommandHandler("inline", inline))
+    application.add_handler(CallbackQueryHandler(button))
+
     application.add_handler(CommandHandler("set", set_timer))
+
+    application.add_handler(CommandHandler("help", help))
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
