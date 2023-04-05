@@ -5,5 +5,5 @@ This is a simple telegram bot exploring some functionalities of the api, like
 - Showing custom keyboards,
 - Displaying guided conversations with the user,
 - Saving certain information the user provides on chat,
-- Inline keyboards
+- Inline mode support
 - Setting timers.

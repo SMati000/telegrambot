@@ -2,10 +2,15 @@ import functools
 import logging
 import os
 from typing import Dict
+from html import escape
+from uuid import uuid4
+
 from dotenv import load_dotenv
-from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, \
+    InlineQueryResultArticle, InputTextMessageContent
+from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, MessageHandler, ConversationHandler, \
-    filters, PicklePersistence, CallbackQueryHandler
+    filters, PicklePersistence, CallbackQueryHandler, InlineQueryHandler
 
 load_dotenv()
 PORT = int(os.environ.get('PORT', 5000))
@@ -96,6 +101,40 @@ async def button(update, context) -> None:
     await query.edit_message_text(text=f"Selected option: {query.data}. Thank you")
 
 
+async def inline_query(update, context) -> None:
+    """Handle the inline query. This is run when you type: @botusername <query>"""
+    query = update.inline_query.query
+
+    if query == "":
+        return
+
+    results = [
+        InlineQueryResultArticle(
+            id=str(uuid4()),
+            title="Spoiler",
+            input_message_content=InputTextMessageContent(
+                f"<span class=tg-spoiler>{escape(query)}</span>", parse_mode=ParseMode.HTML
+            ),
+        ),
+        InlineQueryResultArticle(
+            id=str(uuid4()),
+            title="Bold",
+            input_message_content=InputTextMessageContent(
+                f"<b>{escape(query)}</b>", parse_mode=ParseMode.HTML
+            ),
+        ),
+        InlineQueryResultArticle(
+            id=str(uuid4()),
+            title="Italic",
+            input_message_content=InputTextMessageContent(
+               f"<i>{escape(query)}</i>", parse_mode=ParseMode.HTML
+            ),
+        ),
+    ]
+
+    await update.inline_query.answer(results)
+
+
 async def set_timer(update, context) -> None:
     """Let the user specify a message to be sent back to him/her after the specified time."""
     chat_id = update.effective_message.chat_id
@@ -131,9 +170,9 @@ async def alarm(context, message) -> None:
     await context.bot.send_message(job.chat_id, text=message)
 
 
-def echo(update, context):
+async def echo(update, context):
     """Echo the user message."""
-    update.message.reply_text(update.message.text)
+    await update.message.reply_text("echoing " + update.message.text)
 
 
 def help(update, context):
@@ -176,6 +215,9 @@ def main():
     application.add_handler(CommandHandler("set", set_timer))
 
     application.add_handler(CommandHandler("help", help))
+
+    # Inline mode has to be first enable with @botfather
+    application.add_handler(InlineQueryHandler(inline_query))
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
