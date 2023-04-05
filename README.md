@@ -4,4 +4,5 @@ This is a simple telegram bot exploring some functionalities of the api, like
 - Process user input and answering,
 - Showing custom keyboards,
 - Displaying guided conversations with the user,
+- Saving the user's information
 - Setting timers.

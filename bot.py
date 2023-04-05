@@ -1,9 +1,11 @@
 import functools
 import logging
 import os
+from typing import Dict
 from dotenv import load_dotenv
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import Application, CommandHandler, MessageHandler, ConversationHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, ConversationHandler, \
+    filters, PicklePersistence
 
 load_dotenv()
 PORT = int(os.environ.get('PORT', 5000))
@@ -15,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 TOKEN = os.environ.get("TOKEN")
 
-GENDER = range(3)
+START = 0
 
 
 # Define a few command handlers. These usually take the two arguments update and
@@ -33,16 +35,18 @@ async def start(update, context) -> int:
         ),
     )
 
-    return GENDER
+    return START
 
 
-async def gender(update, context) -> int:
-    """Stores the selected gender and answers the user."""
-    user = update.message.from_user
-    logger.info("Gender of %s: %s", user.first_name, update.message.text)
+async def done(update, context) -> int:
+    """Display the gathered info and end the conversation."""
+    context.user_data["sex"] = update.message.text.lower()
+
     await update.message.reply_text(
-        "I see!", reply_markup=ReplyKeyboardRemove(),
+        f"I learned these facts about you: {facts_to_str(context.user_data)}Until next time!",
+        reply_markup=ReplyKeyboardRemove(),
     )
+    return ConversationHandler.END
 
 
 async def cancel(update, context) -> int:
@@ -54,6 +58,19 @@ async def cancel(update, context) -> int:
     )
 
     return ConversationHandler.END
+
+
+async def show_data(update, context) -> None:
+    """Display the gathered info."""
+    await update.message.reply_text(
+        f"This is what you already told me: {facts_to_str(context.user_data)}"
+    )
+
+
+def facts_to_str(user_data: Dict[str, str]) -> str:
+    """Helper function for formatting the gathered user info."""
+    facts = [f"{key} - {value}" for key, value in user_data.items()]
+    return "\n".join(facts).join(["\n", "\n"])
 
 
 def help(update, context):
@@ -109,21 +126,28 @@ def error(update, context):
 def main():
     """Start the bot."""
     # Create the Application and pass it your bot's token.
-    application = Application.builder().token(TOKEN).build()
+    persistence = PicklePersistence(filepath="conversationbot")  # file where data will be saved
+    application = Application.builder().token(TOKEN).persistence(persistence).build()
 
     # on different commands - answer in Telegram
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            GENDER: [MessageHandler(filters.Regex("^(Boy|Girl|Other)$"), gender)],
+            START: [MessageHandler(filters.Regex("^(Boy|Girl|Other)$"), done)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[
+            MessageHandler(filters.Regex("^(Boy|Girl|Other)$"), done),
+            CommandHandler("cancel", cancel)
+        ],
+        name="my_conversation",
+        persistent=True,
     )
 
     # application.add_handler(CommandHandler("start", start))
     application.add_handler(conv_handler)
-    application.add_handler(CommandHandler("set", set_timer))
+    application.add_handler(CommandHandler("show_data", show_data))
     application.add_handler(CommandHandler("help", help))
+    application.add_handler(CommandHandler("set", set_timer))
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
